@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>JADEOKANA // 3D CHASE</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Permanent+Marker&family=Rubik+Glitch&family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --acid-blue: #2a1bce;
+            --acid-dark: #1a1080;
+            --terminal-green: #0f0;
+        }
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: var(--acid-blue);
+            font-family: 'Space Mono', monospace;
+            user-select: none;
+        }
+
+        #canvas-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+
+        /* UI Overlay */
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .interactive-btn {
+            pointer-events: auto;
+            font-family: 'Rubik Glitch', system-ui;
+            transition: all 0.2s ease;
+            cursor: pointer;
+        }
+        .interactive-btn:hover { transform: scale(1.1) rotate(-2deg); color: #fff; text-shadow: 0 0 10px #fff; }
+        .interactive-btn:active { transform: scale(0.95); }
+
+        /* Grain Texture */
+        .grain {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; z-index: 20; opacity: 0.12;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' opacity='0.5' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+        }
+
+        .glitch-text { animation: glitch-anim 2s infinite; }
+        @keyframes glitch-anim {
+            0% { transform: translate(0); }
+            20% { transform: translate(-2px, 2px); }
+            40% { transform: translate(-2px, -2px); }
+            60% { transform: translate(2px, 2px); }
+            80% { transform: translate(2px, -2px); }
+            100% { transform: translate(0); }
+        }
+
+        #loading {
+            position: absolute; inset: 0; background: var(--acid-blue);
+            display: flex; justify-content: center; align-items: center; z-index: 50;
+            transition: opacity 0.5s;
+        }
+
+        /* Pause Menu Overlay */
+        #pause-overlay {
+            display: none;
+            position: absolute; inset: 0;
+            background: rgba(0,0,0,0.5);
+            backdrop-filter: blur(4px);
+            z-index: 40;
+            align-items: center; justify-content: center;
+        }
+
+        /* System Registry Panel */
+        #registry-panel {
+            display: none;
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            width: 90%; max-width: 600px;
+            background: rgba(5, 5, 5, 0.95);
+            border: 2px solid var(--acid-blue);
+            box-shadow: 0 0 30px var(--acid-blue);
+            z-index: 100;
+            color: #fff;
+            padding: 2px;
+            pointer-events: auto;
+            clip-path: polygon(
+                0 0, 100% 0, 100% 100%, 
+                10% 100%, 0% 90%
+            );
+        }
+
+        .reg-header {
+            background: var(--acid-blue);
+            color: #000;
+            font-family: 'Rubik Glitch';
+            padding: 10px 20px;
+            font-size: 1.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .reg-body {
+            padding: 30px;
+            font-family: 'Space Mono', monospace;
+            font-size: 0.9rem;
+            line-height: 1.6;
+            background-image: linear-gradient(rgba(42, 27, 206, 0.1) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(42, 27, 206, 0.1) 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+
+        .reg-row {
+            display: flex;
+            border-bottom: 1px dashed rgba(255,255,255,0.2);
+            padding: 8px 0;
+        }
+        .reg-label { color: #888; width: 40%; }
+        .reg-value { color: #fff; font-weight: bold; width: 60%; text-align: right; }
+        
+        .stable-tag { color: #0f0; text-shadow: 0 0 5px #0f0; }
+        .feature-list { list-style: none; padding: 0; margin-top: 10px; text-align: left; }
+        .feature-list li::before { content: "> "; color: var(--acid-blue); }
+
+        .reg-close {
+            background: transparent; border: none; font-weight: bold; cursor: pointer;
+            font-family: 'Space Mono';
+        }
+        .reg-close:hover { color: #fff; }
+
+    </style>
+</head>
+<body>
+
+    <div class="grain"></div>
+
+    <div id="loading">
+        <h1 class="text-4xl font-['Rubik_Glitch'] text-white animate-pulse">LOADING ASSETS...</h1>
+    </div>
+
+    <div id="canvas-container"></div>
+
+    <div id="ui-layer">
+        <!-- HOME PAGE -->
+        <div id="home-page" class="absolute inset-0 flex flex-col items-center justify-center transition-opacity duration-500 bg-black/30 backdrop-blur-[2px]">
+            <div class="relative z-20 text-center">
+                <h1 class="text-6xl md:text-9xl text-white font-['Rubik_Glitch'] mb-2 glitch-text" style="text-shadow: 4px 4px 0px #000;">
+                    POLICE<br>CHASE
+                </h1>
+                <p class="font-['Permanent_Marker'] text-xl md:text-2xl text-pink-500 -rotate-3 mb-10">
+                    THE AMAZING NEW TASTE
+                </p>
+                <button id="start-btn" class="interactive-btn text-4xl bg-white text-blue-900 px-12 py-4 border-4 border-blue-900 transform skew-x-[-10deg]">
+                    DRIVE NOW
+                </button>
+            </div>
+            <div class="absolute bottom-10 font-mono text-xs opacity-60 text-center text-white">
+                ARROWS: LEFT/RIGHT (MOVE) • UP (JUMP)<br>
+                SPACEBAR: PAUSE // 3D RENDER
+            </div>
+        </div>
+
+        <!-- HUD (Hidden on Home) -->
+        <div id="hud" class="hidden absolute top-0 w-full p-6 flex justify-between items-start">
+            <div>
+                <p class="text-xs font-mono text-white/60">DISTANCE</p>
+                <h2 id="score" class="text-5xl font-['Rubik_Glitch'] text-white">000</h2>
+            </div>
+            <div class="text-right">
+                <p class="text-xs font-mono text-white/60">STATUS</p>
+                <h2 class="text-2xl font-['Permanent_Marker'] text-red-500 animate-pulse">WANTED</h2>
+            </div>
+        </div>
+
+        <!-- PAUSE OVERLAY -->
+        <div id="pause-overlay" class="flex flex-col text-center">
+            <h2 class="text-6xl font-['Rubik_Glitch'] text-white mb-2">PAUSED</h2>
+            <p class="text-white font-mono animate-pulse">PRESS SPACE TO RESUME</p>
+        </div>
+
+        <!-- GAME OVER -->
+        <div id="game-over" class="hidden absolute inset-0 bg-black/90 flex flex-col items-center justify-center z-50">
+            <h1 class="text-8xl font-['Rubik_Glitch'] text-red-600 mb-4">CRASHED</h1>
+            <p class="font-mono text-xl text-white mb-8">DISTANCE TRAVELED: <span id="final-score">0</span>m</p>
+            <div class="flex flex-col gap-4">
+                <button id="restart-btn" class="interactive-btn text-3xl bg-transparent border-2 border-white text-white px-8 py-3 hover:bg-white hover:text-black">
+                    RETRY
+                </button>
+                <button id="home-btn-gameover" class="interactive-btn text-xl text-white/60 hover:text-white hover:underline">
+                    RETURN HOME
+                </button>
+            </div>
+        </div>
+
+        <!-- SYSTEM REGISTRY PANEL -->
+        <div id="registry-panel">
+            <div class="reg-header">
+                <span>SYSTEM_REGISTRY</span>
+                <button class="reg-close" onclick="closeRegistry()">[X]</button>
+            </div>
+            <div class="reg-body">
+                <div class="reg-row">
+                    <span class="reg-label">ORIGIN_DATE</span>
+                    <span class="reg-value">8th Dec, 2025</span>
+                </div>
+                <div class="reg-row">
+                    <span class="reg-label">CURRENT_VERSION</span>
+                    <span class="reg-value">v.3.1.0-ACID</span>
+                </div>
+                <div class="reg-row">
+                    <span class="reg-label">SYSTEM_STATUS</span>
+                    <span class="reg-value stable-tag">STABLE::OPTIMIZED</span>
+                </div>
+                <div class="reg-row" style="border-bottom: none; margin-top: 10px;">
+                    <span class="reg-label" style="width: 100%; color: #fff; text-decoration: underline;">INSTALLED_FEATURES:</span>
+                </div>
+                <ul class="feature-list">
+                    <li>3D_RENDER_PIPELINE [THREE.JS]</li>
+                    <li>DYNAMIC_PHYSICS_ENGINE</li>
+                    <li>IMMERSIVE_ACID_UI</li>
+                    <li>SYSTEM_REGISTRY_TOOL</li>
+                </ul>
+                <div class="reg-row" style="margin-top: 20px; border-top: 2px solid #fff; border-bottom: none; padding-top: 15px;">
+                    <span class="reg-label">AUTHOR_SIGNATURE</span>
+                    <span class="reg-value" style="font-family: 'Rubik Glitch'; font-size: 1.2rem;">Anacondy [3]</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- 3D ENGINE CONFIG ---
+        const config = {
+            speed: 0.8,
+            laneWidth: 3.5,
+            jumpForce: 0.35,
+            gravity: 0.015,
+            groundLevel: 0.8,
+            colorBg: 0x2a1bce, // Acid Blue
+            colorFog: 0x1a1080
+        };
+
+        let scene, camera, renderer;
+        let playerCar, world;
+        let animationId;
+        
+        // Game State
+        let isGameActive = false;
+        let isPaused = false;
+        let score = 0;
+        let speedMultiplier = 1;
+        
+        // Physics State
+        let obstacles = [];
+        let particles = [];
+        let targetLane = 0; // -1, 0, 1
+        let verticalVelocity = 0;
+        let isJumping = false;
+
+        // Registry State
+        const keysPressed = new Set();
+        let registryTimer = null;
+        
+        // --- ASSET GENERATION ---
+        function createGraffitiTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512; canvas.height = 512;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, 512, 512);
+            
+            // Draw scratchy text
+            ctx.font = 'bold 80px Arial';
+            ctx.fillStyle = '#000000';
+            ctx.save();
+            ctx.translate(256, 256);
+            ctx.rotate(-Math.PI/4);
+            ctx.fillText("POLICE", -150, 0);
+            ctx.restore();
+            
+            // Scratches
+            ctx.strokeStyle = '#000000';
+            ctx.lineWidth = 5;
+            for(let i=0; i<50; i++) {
+                ctx.beginPath();
+                ctx.moveTo(Math.random()*512, Math.random()*512);
+                ctx.lineTo(Math.random()*512, Math.random()*512);
+                ctx.stroke();
+            }
+
+            const tex = new THREE.CanvasTexture(canvas);
+            return tex;
+        }
+
+        // --- INIT THREE.JS ---
+        function init() {
+            const container = document.getElementById('canvas-container');
+            
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(config.colorBg);
+            scene.fog = new THREE.FogExp2(config.colorFog, 0.015);
+
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(-10, 6, 12); 
+            camera.lookAt(10, 0, 0);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            container.appendChild(renderer.domElement);
+
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+
+            const dirLight = new THREE.DirectionalLight(0xff00ff, 0.8);
+            dirLight.position.set(-20, 50, 20);
+            dirLight.castShadow = true;
+            dirLight.shadow.mapSize.width = 1024;
+            dirLight.shadow.mapSize.height = 1024;
+            scene.add(dirLight);
+
+            buildPlayerCar();
+            buildEnvironment();
+
+            window.addEventListener('resize', onWindowResize, false);
+            document.addEventListener('keydown', onKeyDown);
+            document.addEventListener('keyup', onKeyUp);
+            document.addEventListener('touchstart', onTouchStart, {passive: false});
+
+            document.getElementById('loading').style.opacity = 0;
+            setTimeout(() => document.getElementById('loading').style.display = 'none', 500);
+
+            animate();
+        }
+
+        function buildPlayerCar() {
+            playerCar = new THREE.Group();
+
+            const graffitiMat = new THREE.MeshStandardMaterial({ 
+                map: createGraffitiTexture(),
+                roughness: 0.4 
+            });
+            const blackMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.2 });
+            const glassMat = new THREE.MeshStandardMaterial({ color: 0x000000, roughness: 0.0, metalness: 0.8 });
+            
+            // Chassis
+            const chassisGeo = new THREE.BoxGeometry(4.5, 1.2, 2.2);
+            const chassis = new THREE.Mesh(chassisGeo, graffitiMat);
+            chassis.position.y = 0; // Relative to group
+            chassis.castShadow = true;
+            playerCar.add(chassis);
+
+            // Cabin
+            const cabinGeo = new THREE.BoxGeometry(2.5, 1.0, 1.8);
+            const cabin = new THREE.Mesh(cabinGeo, glassMat);
+            cabin.position.set(-0.2, 1.1, 0);
+            cabin.castShadow = true;
+            playerCar.add(cabin);
+
+            // Wheels
+            const wheelGeo = new THREE.CylinderGeometry(0.5, 0.5, 0.4, 24);
+            const wheelMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
+            const positions = [[-1.5, -0.3, 1.1], [1.5, -0.3, 1.1], [-1.5, -0.3, -1.1], [1.5, -0.3, -1.1]];
+
+            positions.forEach(pos => {
+                const wheel = new THREE.Mesh(wheelGeo, wheelMat);
+                wheel.rotation.x = Math.PI / 2;
+                wheel.position.set(...pos);
+                wheel.castShadow = true;
+                playerCar.add(wheel);
+            });
+
+            // Sirens
+            const sirenGeo = new THREE.BoxGeometry(0.4, 0.2, 0.8);
+            const sirenLeftMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+            const sirenRightMat = new THREE.MeshBasicMaterial({ color: 0x0000ff });
+            
+            const sirenL = new THREE.Mesh(sirenGeo, sirenLeftMat);
+            sirenL.position.set(-0.2, 1.65, 0.4);
+            playerCar.add(sirenL);
+            
+            const sirenR = new THREE.Mesh(sirenGeo, sirenRightMat);
+            sirenR.position.set(-0.2, 1.65, -0.4);
+            playerCar.add(sirenR);
+
+            const pl = new THREE.PointLight(0xff0000, 1, 10);
+            pl.position.set(0, 2, 0);
+            playerCar.add(pl);
+            playerCar.userData.sirenLight = pl;
+
+            playerCar.position.y = config.groundLevel;
+            scene.add(playerCar);
+        }
+
+        function buildEnvironment() {
+            const roadGeo = new THREE.PlaneGeometry(200, 40);
+            const roadMat = new THREE.MeshStandardMaterial({ 
+                color: 0x1a1a1a, 
+                roughness: 0.8,
+                side: THREE.DoubleSide
+            });
+            const road = new THREE.Mesh(roadGeo, roadMat);
+            road.rotation.x = -Math.PI / 2;
+            road.position.x = 0;
+            road.receiveShadow = true;
+            scene.add(road);
+
+            const partGeo = new THREE.TetrahedronGeometry(0.5);
+            const partMat = new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true });
+            
+            for(let i=0; i<50; i++) {
+                const mesh = new THREE.Mesh(partGeo, partMat);
+                resetParticle(mesh);
+                mesh.position.x = Math.random() * 100 - 50;
+                scene.add(mesh);
+                particles.push(mesh);
+            }
+        }
+
+        function resetParticle(mesh) {
+            mesh.position.x = 100 + Math.random() * 50;
+            mesh.position.y = Math.random() * 10 + 2;
+            mesh.position.z = (Math.random() - 0.5) * 30;
+            mesh.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, 0);
+        }
+
+        function createObstacle() {
+            // Smaller obstacles so they are jumpable
+            const height = 1.5; 
+            const geo = new THREE.BoxGeometry(1, height, 3);
+            const mat = new THREE.MeshStandardMaterial({ color: 0xff0000, emissive: 0x330000 });
+            const mesh = new THREE.Mesh(geo, mat);
+            
+            mesh.position.x = 120;
+            mesh.position.y = height / 2; // Sit on ground
+            
+            const lane = Math.floor(Math.random() * 3) - 1; 
+            mesh.position.z = lane * config.laneWidth; 
+            
+            mesh.castShadow = true;
+            // Store dimensions for collision
+            mesh.userData = { width: 1, height: height, depth: 3 };
+
+            scene.add(mesh);
+            obstacles.push({ mesh: mesh, active: true });
+        }
+
+        // --- CONTROLS ---
+        function onKeyDown(event) {
+            // Registry Logic
+            keysPressed.add(event.code); // Store KeyC, KeyO, Digit2 etc.
+            
+            // Check Combo: KeyC + KeyO + Digit2
+            if (keysPressed.has('KeyC') && keysPressed.has('KeyO') && keysPressed.has('Digit2')) {
+                if (!registryTimer) {
+                    // Start timer
+                    registryTimer = setTimeout(() => {
+                        openRegistry();
+                    }, 2000);
+                }
+            }
+
+            // Pause Toggle
+            if (event.code === 'Space') {
+                if (isGameActive) {
+                    togglePause();
+                }
+                return; 
+            }
+
+            if (!isGameActive || isPaused) return;
+
+            switch(event.key) {
+                case 'ArrowLeft': 
+                case 'a': case 'A':
+                    targetLane = Math.max(targetLane - 1, -1);
+                    break;
+                case 'ArrowRight': 
+                case 'd': case 'D':
+                    targetLane = Math.min(targetLane + 1, 1);
+                    break;
+                case 'ArrowUp':
+                case 'w': case 'W':
+                    if (!isJumping) {
+                        verticalVelocity = config.jumpForce;
+                        isJumping = true;
+                    }
+                    break;
+            }
+        }
+
+        function onKeyUp(event) {
+            keysPressed.delete(event.code);
+            
+            // If any key of the combo is released, cancel the timer
+            if (!keysPressed.has('KeyC') || !keysPressed.has('KeyO') || !keysPressed.has('Digit2')) {
+                if (registryTimer) {
+                    clearTimeout(registryTimer);
+                    registryTimer = null;
+                }
+            }
+        }
+
+        function onTouchStart(event) {
+            if (!isGameActive || isPaused) return;
+            event.preventDefault();
+            const touchX = event.touches[0].clientX;
+            const touchY = event.touches[0].clientY;
+            
+            if (touchY < window.innerHeight * 0.3) {
+                // Top 30% = Jump
+                if (!isJumping) {
+                    verticalVelocity = config.jumpForce;
+                    isJumping = true;
+                }
+            } else {
+                if (touchX < window.innerWidth / 2) {
+                    targetLane = Math.max(targetLane - 1, -1);
+                } else {
+                    targetLane = Math.min(targetLane + 1, 1);
+                }
+            }
+        }
+
+        function togglePause() {
+            isPaused = !isPaused;
+            const overlay = document.getElementById('pause-overlay');
+            overlay.style.display = isPaused ? 'flex' : 'none';
+        }
+
+        // --- REGISTRY FUNCTIONS ---
+        function openRegistry() {
+            // Pause game if active
+            if (isGameActive && !isPaused) togglePause();
+            document.getElementById('registry-panel').style.display = 'block';
+            registryTimer = null; // Reset
+        }
+
+        // Exposed globally for button onclick
+        window.closeRegistry = function() {
+            document.getElementById('registry-panel').style.display = 'none';
+        }
+
+        // --- LOOP ---
+        function animate() {
+            animationId = requestAnimationFrame(animate);
+            const time = Date.now() * 0.001;
+
+            if (playerCar && playerCar.userData.sirenLight) {
+                const flash = Math.sin(time * 20) > 0;
+                playerCar.userData.sirenLight.color.setHex(flash ? 0xff0000 : 0x0000ff);
+                playerCar.userData.sirenLight.intensity = 2;
+            }
+
+            if (isPaused) {
+                renderer.render(scene, camera);
+                return;
+            }
+
+            const targetZ = targetLane * config.laneWidth;
+            playerCar.position.z += (targetZ - playerCar.position.z) * 0.15;
+            playerCar.rotation.x = (playerCar.position.z - targetZ) * 0.1;
+
+            if (isJumping) {
+                playerCar.position.y += verticalVelocity;
+                verticalVelocity -= config.gravity;
+
+                if (playerCar.position.y <= config.groundLevel) {
+                    playerCar.position.y = config.groundLevel;
+                    isJumping = false;
+                    verticalVelocity = 0;
+                }
+            } else {
+                playerCar.position.y = config.groundLevel + Math.sin(time * 15) * 0.05;
+            }
+
+            if (isGameActive) {
+                score += 0.5;
+                speedMultiplier += 0.0001;
+                updateHUD();
+
+                particles.forEach(p => {
+                    p.position.x -= config.speed * speedMultiplier;
+                    p.rotation.x += 0.02;
+                    if (p.position.x < -30) resetParticle(p);
+                });
+
+                if (Math.random() < 0.02) {
+                    createObstacle();
+                }
+
+                for (let i = obstacles.length - 1; i >= 0; i--) {
+                    let obj = obstacles[i];
+                    obj.mesh.position.x -= config.speed * speedMultiplier;
+
+                    const dx = Math.abs(playerCar.position.x - obj.mesh.position.x);
+                    const dz = Math.abs(playerCar.position.z - obj.mesh.position.z);
+                    const obsTop = obj.mesh.position.y + (obj.mesh.userData.height / 2);
+                    const playerBottom = playerCar.position.y;
+
+                    if (dx < 3.0 && dz < 1.2) {
+                        if (playerBottom < obsTop - 0.2) {
+                            gameOver();
+                        }
+                    }
+
+                    if (obj.mesh.position.x < -30) {
+                        scene.remove(obj.mesh);
+                        obstacles.splice(i, 1);
+                    }
+                }
+            } else {
+                particles.forEach(p => {
+                    p.position.x -= 0.2;
+                    if (p.position.x < -30) resetParticle(p);
+                });
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        // --- STATE MANAGEMENT ---
+        function updateHUD() {
+            document.getElementById('score').innerText = Math.floor(score).toString().padStart(3, '0');
+        }
+
+        function startGame() {
+            isGameActive = true;
+            isPaused = false;
+            score = 0;
+            speedMultiplier = 1;
+            targetLane = 0;
+            playerCar.position.z = 0;
+            playerCar.position.y = config.groundLevel;
+            verticalVelocity = 0;
+            isJumping = false;
+            
+            obstacles.forEach(o => scene.remove(o.mesh));
+            obstacles = [];
+
+            document.getElementById('pause-overlay').style.display = 'none';
+            document.getElementById('home-page').classList.add('hidden');
+            
+            const gameOverEl = document.getElementById('game-over');
+            gameOverEl.classList.add('hidden'); 
+            gameOverEl.style.display = 'none';
+            
+            const hudEl = document.getElementById('hud');
+            hudEl.classList.remove('hidden');
+            hudEl.style.display = 'flex';
+        }
+
+        function gameOver() {
+            isGameActive = false;
+            
+            const hudEl = document.getElementById('hud');
+            hudEl.classList.add('hidden');
+            hudEl.style.display = 'none';
+
+            const gameOverEl = document.getElementById('game-over');
+            gameOverEl.classList.remove('hidden');
+            gameOverEl.style.display = 'flex';
+            
+            document.getElementById('final-score').innerText = Math.floor(score);
+        }
+
+        function goHome() {
+            isGameActive = false;
+            isPaused = false;
+            
+            obstacles.forEach(o => scene.remove(o.mesh));
+            obstacles = [];
+
+            const gameOverEl = document.getElementById('game-over');
+            gameOverEl.classList.add('hidden');
+            gameOverEl.style.display = 'none';
+            
+            const hudEl = document.getElementById('hud');
+            hudEl.classList.add('hidden');
+            hudEl.style.display = 'none';
+
+            const homeEl = document.getElementById('home-page');
+            homeEl.classList.remove('hidden');
+            homeEl.style.display = 'flex';
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        document.getElementById('start-btn').addEventListener('click', startGame);
+        document.getElementById('restart-btn').addEventListener('click', startGame);
+        document.getElementById('home-btn-gameover').addEventListener('click', goHome);
+
+        init();
+
+    </script>
+</body>
+</html>
